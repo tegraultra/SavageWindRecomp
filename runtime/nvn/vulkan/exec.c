@@ -16,6 +16,7 @@
 #include "vk.h"
 #include "vram.h"
 #include "fsr3.h"
+#include "fsr4.h"
 #include "mvec.h"
 #include "../output_scale.h"
 #include "record.h"
@@ -8643,10 +8644,12 @@ static TexBackend *fsr3_scene(VkCommandBuffer cb, TexBackend *b, uint32_t ow, ui
         .reset = last == ~0ull || last + 1 != frame,
     };
     last_ns = ns;
-    if (g_gpuprof_frame) gp_mark(cb, "FSR 3 upscaler");
+    bool f4 = g_settings.upscaler == UPSCALE_FSR4 && fsr4_available();
+    if (g_gpuprof_frame) gp_mark(cb, f4 ? "FSR 4 upscaler" : "FSR 3 upscaler");
     rec_drain();  // (FidelityFX records into cb itself, and may wait for the device: what was queued before goes first)
-    if (!fsr3_dispatch(&d)) return NULL;
-    if (g_gpuprof_frame) gp_mark(cb, "after FSR 3");
+    // (FSR 4: AMD's DLLs, fsr4.cpp; a GPU or DLLs without an FSR 4 provider give up for the run and FSR 3 does the frame)
+    if (!(f4 && fsr4_dispatch(&d)) && !fsr3_dispatch(&d)) return NULL;
+    if (g_gpuprof_frame) gp_mark(cb, "after the upscaler");
     last = frame;
     vk_dyn_forget();  // (FSR's own pipelines and sets were bound)
     vk_full_barrier(cb);

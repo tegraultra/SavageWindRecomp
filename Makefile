@@ -182,6 +182,9 @@ FFX_INC  := -I$(FFX)/sdk/include -I$(FFX)/sdk/src/components -I$(FFX)/sdk/src/sh
 ifneq ($(PLATFORM),macos)
 BACKEND_OBJ += $(FFX_OBJ)
 $(B)/rt/nvn/vulkan/fsr3.o: CXXFLAGS := -DSW_FSR3=1 -include $(FFX)/ffx_compat.h $(FFX_INC) $(CXXFLAGS)
+# AMD FSR 4 (runtime/nvn/vulkan/fsr4.cpp, by MK-JH): AMD's signed SDK 2.x DLLs, loaded at run time; only the ffx-api headers
+# (third_party/FidelityFX/ffxapi) are built against
+$(B)/rt/nvn/vulkan/fsr4.o: CXXFLAGS := -I$(FFX)/ffxapi $(CXXFLAGS)
 endif
 $(B)/ffx/%.o: $(FFX)/sdk/src/%.cpp $(FFX)/ffx_compat.h
 	@mkdir -p $(dir $@)

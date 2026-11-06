@@ -837,6 +837,8 @@ static void tab_display(void) {
         // game's own 1920 x 1080 image to a bigger window.
         std::string fsr3 = upscaler_available(UPSCALE_FSR3) ? std::string(tr("AMD FSR 3"))
                                                             : std::string(tr("FSR 3")) + " " + tr("(coming soon)");
+        std::string fsr4 = upscaler_available(UPSCALE_FSR4) ? std::string(tr("AMD FSR 4"))
+                                                            : std::string(tr("FSR 4")) + " " + tr("(needs AMD's DLLs)");
         std::string dlss = std::string(tr("DLSS")) + " " + tr(renderer_gpu_rtx() ? "(coming soon)" : "(NVIDIA RTX only)");
 #ifdef __APPLE__
         const char *ups[] = {"Off", "MetalFX"};
@@ -845,8 +847,8 @@ static void tab_display(void) {
                          "scaling. MetalFX: Apple's upscaler, sharper.\n\nRendering below the window's size (the modes "
                          "below) is coming in a later version.";
 #else
-        const char *ups[] = {"Off", "AMD FSR 1", fsr3.c_str(), dlss.c_str()};
-        static const int ups_value[] = {UPSCALE_OFF, UPSCALE_FSR1, UPSCALE_FSR3, UPSCALE_DLSS};
+        const char *ups[] = {"Off", "AMD FSR 1", fsr3.c_str(), fsr4.c_str(), dlss.c_str()};
+        static const int ups_value[] = {UPSCALE_OFF, UPSCALE_FSR1, UPSCALE_FSR3, UPSCALE_FSR4, UPSCALE_DLSS};
         // (the FSR 3 paragraph on its own: the first one keeps its translations)
         static std::string uds;
         uds = std::string(tr("Off: the 3D image renders at the window's resolution. AMD FSR 1: it renders smaller (the mode "
@@ -858,6 +860,15 @@ static void tab_display(void) {
                         "has no effect with it). Sharpening sets its own sharpening. NVIDIA DLSS (NVIDIA RTX graphics "
                         "cards) is coming in a later version.")
                    : tr("AMD FSR 3 and NVIDIA DLSS (NVIDIA RTX graphics cards) are coming in a later version."));
+        // (FSR 4, added by MK-JH: AMD's machine-learning upscaler through AMD's own DLLs)
+        uds += "\n\n";
+        uds += tr("AMD FSR 4: AMD's machine-learning upscaler, the same inputs as FSR 3 and a sharper, steadier image. It "
+                  "needs AMD's two FSR DLLs (amd_fidelityfx_loader_vk.dll and amd_fidelityfx_upscaler_vk.dll) next to "
+                  "savagewind.exe, and a Radeon RX 6000, 7000 or 9000. Where the GPU has no FSR 4, FSR 3 runs instead.");
+        if (rt_fsr4_fallback()) {
+            uds += "\n\n";
+            uds += tr("FSR 4 isn't available with this GPU or these DLLs: FSR 3 is running instead.");
+        }
         const char *ud = uds.c_str();
 #endif
         enum { NU = sizeof ups_value / sizeof ups_value[0] };
@@ -1005,6 +1016,10 @@ static void tab_quit(float scale, bool in_game) {
     snprintf(d1, sizeof d1, tr("Leaves the game and goes back to the Savage Wind start screen.%s"), lost);
     snprintf(d2, sizeof d2, tr("Closes Savage Wind.%s"), lost);
     opt_begin("##quit", scale);
+    opt_section("Credits");
+    opt_action("FSR 4 support by MK-JH", "", "FSR 4 in this build was added by MK-JH.");
+    if (opt_action("Telegram channel", "MKJH_APPS", "Opens https://t.me/MKJH_APPS in your browser.", false))
+        SDL_OpenURL("https://t.me/MKJH_APPS");
     opt_section("Quit");
     if (!ask) {
         if (!in_game) opt_disable_next();  // (already on it)
@@ -1117,6 +1132,7 @@ static void perf_overlay_draw(ImGuiIO &io, float scale) {
         case UPSCALE_METALFX: line += tr("MetalFX"); break;
         case UPSCALE_FSR1: line += tr("FSR 1"); break;
         case UPSCALE_FSR3: line += tr("FSR 3"); break;
+        case UPSCALE_FSR4: line += rt_fsr4_fallback() ? tr("FSR 3 (no FSR 4 here)") : tr("FSR 4"); break;
         default: line += tr("Off");
     }
     int q = g_settings.upscale_quality;

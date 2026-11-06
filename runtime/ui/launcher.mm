@@ -1704,6 +1704,14 @@ extern "C" void launcher_run(const char *root, int mode) {
                 ImVec2 p(right - vsz.x, y);
                 for (float d : {2.5f, 1.5f, 0.8f}) dl->AddText(font, vs, ImVec2(p.x + d * s, p.y + d * s), IM_COL32(4, 8, 30, 150), ver);
                 dl->AddText(font, vs, p, IM_COL32(255, 255, 255, 255), ver);
+                // (FSR 4 support: MK-JH and his Telegram channel, under the version)
+                char cr[96];
+                snprintf(cr, sizeof cr, "%s  |  t.me/MKJH_APPS", tr("FSR 4 by MK-JH"));
+                float cs = fs * 1.1f;
+                ImVec2 csz = font->CalcTextSizeA(cs, FLT_MAX, 0, cr);
+                ImVec2 cp(right - csz.x, y + vs * 1.35f);
+                for (float d : {2.0f, 1.0f}) dl->AddText(font, cs, ImVec2(cp.x + d * s, cp.y + d * s), IM_COL32(4, 8, 30, 150), cr);
+                dl->AddText(font, cs, cp, IM_COL32(255, 255, 255, 230), cr);
             }
             ImGui::PopFont();
             }

@@ -39,3 +39,12 @@ Changes to the SDK's files (marked "Savage Wind" in them):
 - `sdk/src/backends/vk/ffx_vk.cpp`: the global descriptor pool is created with all six of the sizes it lists. It passed
   five, leaving out the storage buffers, which the FSR 3 upscaler's passes allocate from it (the Vulkan validation
   layer reports it; NVIDIA's driver allocates them anyway).
+
+## ffxapi (AMD FSR SDK 2.4.0 headers, for FSR 4)
+
+`ffxapi/` holds four public headers of AMD's FSR SDK 2.4.0 (<https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK>,
+`Kits/FidelityFX/api/include` and `upscalers/include`; MIT, notice in each file): `api/include/ffx_api.h`,
+`ffx_api_types.h`, `vk/ffx_api_vk.h` and `upscalers/include/ffx_upscale.h`. `runtime/nvn/vulkan/fsr4.cpp` builds against
+them and loads AMD's signed `amd_fidelityfx_loader_vk.dll` / `amd_fidelityfx_upscaler_vk.dll` at run time (Windows); the DLLs
+themselves are not in this repository (docs/FSR4.md). One change: `ffx_api.h` guards its `FFX_API_ENTRY` define so
+`fsr4.cpp` can define it empty (the functions are called through pointers, not imported).

@@ -16,6 +16,7 @@
 #include "../../settings.h"
 #include "../../ui/menu.h"
 #include "../../window_size.h"
+#include "fsr4.h"
 #include "mvec.h"
 #include "vk.h"
 #include "vram.h"
@@ -260,9 +261,13 @@ static void create_device(void) {
     vkEnumerateDeviceExtensionProperties(g_vk.phys, NULL, &ne, NULL);
     VkExtensionProperties *ep = calloc(ne, sizeof *ep);
     vkEnumerateDeviceExtensionProperties(g_vk.phys, NULL, &ne, ep);
-    const char *ext[24];
+    const char *ext[32];
     uint32_t n_ext = 0;
     ext[n_ext++] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+    // AMD FSR 4 (fsr4.h, Video > Upscaler): only when AMD's DLLs are next to the program the device is made with what its
+    // machine-learning upscaler may use, as AMD's own sample does: every core feature the driver has, cooperative
+    // matrices, FP8 and integer dot products where the GPU has them (below, before vkCreateDevice)
+    bool fsr4 = fsr4_dlls_present();
     bool addr_report = g_addr_report_hi && has_ext(ep, ne, VK_EXT_DEVICE_ADDRESS_BINDING_REPORT_EXTENSION_NAME);
     if (addr_report) ext[n_ext++] = VK_EXT_DEVICE_ADDRESS_BINDING_REPORT_EXTENSION_NAME;
     if (g_addr_report_hi) LOG("[vk] address binding report %s\n", addr_report ? "on" : "not supported");
@@ -461,6 +466,11 @@ static void create_device(void) {
                                             .storageBuffer16BitAccess = WANT(f11_have, storageBuffer16BitAccess),
                                             .uniformAndStorageBuffer16BitAccess = g_vk.fp16, .pNext = &f12};
 #undef WANT
+    if (fsr4) {  // (the driver's own set: its pNext links stay ours)
+        void *n11 = f11.pNext, *n12 = f12.pNext, *n13 = f13.pNext;
+        f11 = f11_have, f12 = f12_have, f13 = f13_have;
+        f11.pNext = n11, f12.pNext = n12, f13.pNext = n13;
+    }
     VkPhysicalDeviceFaultFeaturesEXT ff = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT, .deviceFault = VK_TRUE,
                                            .pNext = &f11};
     VkPhysicalDeviceAddressBindingReportFeaturesEXT abr = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ADDRESS_BINDING_REPORT_FEATURES_EXT,
@@ -509,6 +519,7 @@ static void create_device(void) {
     b->robustBufferAccess = h->robustBufferAccess;  // guest shaders index cbufs freely: keep OOB reads harmless
     b->shaderClipDistance = h->shaderClipDistance;
     if (!h->shaderInt64) LOG("[vk] warning: no shaderInt64 (64-bit address math in shaders)\n");
+    if (fsr4) *b = *h;  // (FSR 4: every core feature the driver has)
     VkPhysicalDevicePresentWaitFeaturesKHR pw_have = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR};
     VkPhysicalDevicePresentIdFeaturesKHR pid_have = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR,
@@ -528,6 +539,43 @@ static void create_device(void) {
         ext[n_ext++] = VK_KHR_PRESENT_WAIT_EXTENSION_NAME;
     }
     g_vk.present_wait = pwait;
+    VkPhysicalDeviceCooperativeMatrixFeaturesKHR coop_on = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR, .cooperativeMatrix = VK_TRUE};
+#ifdef VK_EXT_shader_float8
+    VkPhysicalDeviceShaderFloat8FeaturesEXT f8_on = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT8_FEATURES_EXT,
+                                                     .shaderFloat8 = VK_TRUE, .shaderFloat8CooperativeMatrix = VK_TRUE};
+#endif
+    if (fsr4) {  // (FSR 4: the extensions beyond core Vulkan 1.3 that AMD's sample asks for, each only where the GPU has it)
+        bool coop = has_ext(ep, ne, VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
+        VkPhysicalDeviceCooperativeMatrixFeaturesKHR coop_have = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR};
+        void *q_next = coop ? (void *)&coop_have : NULL;
+#ifdef VK_EXT_shader_float8
+        bool f8 = has_ext(ep, ne, VK_EXT_SHADER_FLOAT8_EXTENSION_NAME);
+        VkPhysicalDeviceShaderFloat8FeaturesEXT f8_have = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT8_FEATURES_EXT,
+                                                           .pNext = q_next};
+        if (f8) q_next = &f8_have;
+#endif
+        VkPhysicalDeviceFeatures2 q = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = q_next};
+        if (q_next) vkGetPhysicalDeviceFeatures2(g_vk.phys, &q);
+        bool use_coop = coop && coop_have.cooperativeMatrix, use_f8 = false;
+        if (use_coop) {
+            coop_on.pNext = f.pNext, f.pNext = &coop_on;
+            ext[n_ext++] = VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME;
+        }
+#ifdef VK_EXT_shader_float8
+        use_f8 = f8 && f8_have.shaderFloat8 && f8_have.shaderFloat8CooperativeMatrix;
+        if (use_f8) {
+            f8_on.pNext = f.pNext, f.pNext = &f8_on;
+            ext[n_ext++] = VK_EXT_SHADER_FLOAT8_EXTENSION_NAME;
+        }
+#endif
+        // (integer dot products are core 1.3 and on in f13 above; the extension too, as the sample lists it)
+        if (has_ext(ep, ne, VK_KHR_SHADER_INTEGER_DOT_PRODUCT_EXTENSION_NAME))
+            ext[n_ext++] = VK_KHR_SHADER_INTEGER_DOT_PRODUCT_EXTENSION_NAME;
+        LOG("[fsr4] device: cooperative matrix %s, FP8 %s, integer dot product %s\n", use_coop ? "on" : "no",
+            use_f8 ? "on" : "no", f13_have.shaderIntegerDotProduct ? "on" : "no");
+    }
     float prio[2] = {1.0f, 1.0f};
     // One queue: frames are presented on the game's own. A second one that presented (present thread below) went
     // wrong with others' code on it: NVIDIA's GPUs before Turing faulted writing to GPU address 0 within the first

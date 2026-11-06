@@ -31,6 +31,8 @@
 
 #ifndef __APPLE__
 bool fsr3_available(void);  // (vulkan/fsr3.h: built in)
+bool fsr4_dlls_present(void);  // (vulkan/fsr4.h: AMD's FSR DLLs next to the program, Windows)
+bool fsr4_gave_up(void);
 #endif
 // FSR 3 upscaling is held back until its cost on the thread that records the frame for Vulkan comes down (the draw
 // translation work in progress): today that thread limits 1080p and 1440p, and FSR 3's motion vectors make every mode
@@ -45,11 +47,25 @@ bool upscaler_available(int u) {
 #ifdef __APPLE__
     return u == UPSCALE_OFF || u == UPSCALE_METALFX;
 #else
-    return u == UPSCALE_OFF || u == UPSCALE_FSR1 || (u == UPSCALE_FSR3 && fsr3_available() && fsr3_upscaler_enabled());
+    // (FSR 4: offered whenever AMD's DLLs are there; a GPU without an FSR 4 provider finds out at the first frame, and
+    // fsr3_scene runs FSR 3 in its place, same render size)
+    return u == UPSCALE_OFF || u == UPSCALE_FSR1 || (u == UPSCALE_FSR3 && fsr3_available() && fsr3_upscaler_enabled()) ||
+           (u == UPSCALE_FSR4 && fsr3_available() && fsr4_dlls_present());
 #endif
 }
 
-bool rt_fsr3(void) { return g_settings.upscaler == UPSCALE_FSR3 && upscaler_available(UPSCALE_FSR3); }
+bool rt_fsr4(void) { return g_settings.upscaler == UPSCALE_FSR4 && upscaler_available(UPSCALE_FSR4); }
+
+// (FSR 4 shares everything with FSR 3 but the last dispatch: the motion vectors, the jitter, the reactive mask)
+bool rt_fsr3(void) { return (g_settings.upscaler == UPSCALE_FSR3 && upscaler_available(UPSCALE_FSR3)) || rt_fsr4(); }
+
+bool rt_fsr4_fallback(void) {
+#ifdef __APPLE__
+    return false;
+#else
+    return rt_fsr4() && fsr4_gave_up();
+#endif
+}
 
 bool rt_temporal(void) { return rt_antialias() == AA_TAA || rt_fsr3(); }
 
